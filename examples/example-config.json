@@ -1,0 +1,11 @@
+{
+  "query": ["AI agents", "browser automation"],
+  "mode": "research",
+  "lookback_hours": 24,
+  "limit": 25,
+  "source": ["google-news", "gdelt", "hacker-news"],
+  "feed": [],
+  "url": [],
+  "browser_fallback": "plan"
+}
+

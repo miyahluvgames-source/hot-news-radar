@@ -1,0 +1,4 @@
+display_name: Hot News Radar
+short_description: Find, rank, and summarize fresh public news, trend, and reputation signals.
+default_prompt: Find the latest public signals for this topic, rank the strongest findings, and show source links plus any coverage gaps.
+

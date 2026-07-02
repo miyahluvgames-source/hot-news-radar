@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <title>Example Radar Feed</title>
+    <link>https://example.com</link>
+    <description>Fixture feed</description>
+    <item>
+      <title>AI agents gain new browser automation tools</title>
+      <link>https://example.com/ai-agents-browser-tools</link>
+      <description>Developers are testing new agent workflows for browser automation.</description>
+      <pubDate>Wed, 01 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Policy teams monitor AI agent safety</title>
+      <link>https://example.com/ai-agent-safety</link>
+      <description>New policy discussions focus on safe deployment.</description>
+      <pubDate>Wed, 01 Jul 2026 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+
