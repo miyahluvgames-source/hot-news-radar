@@ -22,28 +22,38 @@ Use this skill when a user wants current or recent public signals: breaking news
 ## Quick Workflow
 
 1. Clarify the target only when necessary: topic, geography, language, time window, and source type.
-2. Run the CLI when deterministic collection is useful:
+2. If the user gives no target, run default global hot news:
+
+   ```bash
+   python scripts/hot_news_radar.py --out artifacts
+   ```
+
+3. Run the CLI when deterministic collection is useful:
 
    ```bash
    python scripts/hot_news_radar.py --query "AI agents" --lookback-hours 24 --limit 25
    ```
 
-3. For custom sources, add feeds or URLs:
+4. For custom sources, add feeds or URLs:
 
    ```bash
    python scripts/hot_news_radar.py --query "topic" --feed "https://example.com/rss" --url "https://example.com/page"
    ```
 
-4. If a page is blocked, dynamic, or login-gated, use `--browser-fallback plan` first. Use `--browser-fallback playwright` only for pages that can be safely rendered without bypassing access controls.
-5. If the user is authorized to access a login-gated page, add `--auth-session-guide` and follow `authenticated-session-guide.md` step by step.
-6. Read `radar-report.md`, `coverage-gaps.json`, and `candidates.json` before summarizing.
-7. Report top findings with source links, heat score, evidence class, and remaining gaps.
+5. If a page is blocked, dynamic, or login-gated, use `--browser-fallback plan` first. Use `--browser-fallback playwright` only for pages that can be safely rendered without bypassing access controls.
+6. If the user is authorized to access a login-gated page, add `--auth-session-guide` and follow `authenticated-session-guide.md` step by step.
+7. If the user asks for recurring runs, add `--automation-guide`; if they want Telegram delivery, add `--telegram-guide` and read `references/telegram-delivery.md`.
+8. Read `radar-report.md`, `coverage-gaps.json`, and `candidates.json` before summarizing.
+9. Report top findings with source links, heat score, evidence class, and remaining gaps.
 
 ## When To Read References
 
 - Read `references/source-strategy.md` when choosing source lanes for a new domain.
+- Read `references/modes.md` when selecting default, global, social, research, reputation, automation, or delivery behavior.
 - Read `references/browser-fallbacks.md` when pages are blocked, dynamic, logged-in, or inconsistent.
 - Read `references/authenticated-sources.md` before guiding a user through a logged-in account or workspace.
+- Read `references/automation.md` when a user asks for a recurring run, monitor, scheduled briefing, or automation.
+- Read `references/telegram-delivery.md` when a user wants reports delivered to Telegram.
 - Read `references/scoring.md` when adjusting ranking or explaining heat scores.
 - Read `references/prompt-pack.md` for user-facing prompt templates.
 - Read `references/github-research-notes.md` when explaining the public open-source design influences.

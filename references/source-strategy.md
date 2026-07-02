@@ -6,6 +6,7 @@ Hot News Radar uses a source ladder so one blocked or noisy lane does not contro
 
 | Lane | Best For | Limits |
 | --- | --- | --- |
+| Google News Top Stories | No-input global hot briefing and regional top-news checks | Aggregator surface; use as a discovery lane, not final verification |
 | Google News RSS | Fast mainstream news discovery | Aggregated timestamps can lag or differ from original source time |
 | GDELT | Broad global news and policy/event monitoring | May include duplicates and weak summaries |
 | RSS/Atom | Official sites, blogs, release feeds, niche communities | Only as good as the feed the user provides |

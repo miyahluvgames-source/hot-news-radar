@@ -12,7 +12,6 @@ import json
 import math
 import os
 import re
-import sys
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -27,6 +26,16 @@ from dateutil import parser as date_parser
 
 
 USER_AGENT = "HotNewsRadar/1.0 (+https://github.com/miyahluvgames-source/hot-news-radar)"
+DEFAULT_GLOBAL_HOT_QUERIES = [
+    "breaking news",
+    "world news",
+    "global markets",
+    "technology",
+    "artificial intelligence",
+    "science",
+    "geopolitics",
+]
+DEFAULT_GLOBAL_HOT_REGIONS = ["US", "GB", "SG", "IN", "AU", "CA"]
 BLOCKED_HINTS = (
     "captcha",
     "access denied",
@@ -84,6 +93,13 @@ class AuthGuide:
     path: str = ""
     urls: list[str] = field(default_factory=list)
     required: bool = False
+
+
+@dataclass
+class RunGuides:
+    default_profile: str = ""
+    automation_guide_path: str = ""
+    telegram_guide_path: str = ""
 
 
 def utc_now() -> datetime:
@@ -172,12 +188,60 @@ def session() -> requests.Session:
     return s
 
 
+def google_news_language_code(language: str | None) -> str:
+    if not language:
+        return "en"
+    return language.split("-")[0].lower() or "en"
+
+
+def google_news_regions(args: argparse.Namespace) -> list[str]:
+    if getattr(args, "region", ""):
+        return [args.region.upper()]
+    if getattr(args, "mode", "") == "global-hot":
+        return DEFAULT_GLOBAL_HOT_REGIONS
+    return ["US"]
+
+
+def collect_google_news_top(args: argparse.Namespace, collected_at: str) -> tuple[list[Candidate], SourceStatus, list[CoverageGap]]:
+    out: list[Candidate] = []
+    gaps: list[CoverageGap] = []
+    hl = args.language or "en-US"
+    lang = google_news_language_code(hl)
+    for gl in google_news_regions(args):
+        per_region_limit = args.limit if args.region else max(5, min(args.limit, 12))
+        ceid = f"{gl}:{lang}"
+        feed_url = f"https://news.google.com/rss?hl={hl}&gl={gl}&ceid={ceid}"
+        try:
+            feed = feedparser.parse(feed_url)
+            if getattr(feed, "bozo", False):
+                gaps.append(CoverageGap(source="google-news-top", url=feed_url, reason=str(feed.bozo_exception), recovery="Retry later or switch to query-based Google News RSS."))
+            for entry in feed.entries[:per_region_limit]:
+                source_name = getattr(getattr(entry, "source", None), "title", "")
+                out.append(
+                    Candidate(
+                        title=html.unescape(getattr(entry, "title", "")).strip(),
+                        url=getattr(entry, "link", ""),
+                        source=source_name or f"Google News Top Stories {gl}",
+                        source_kind="google-news-top",
+                        summary=BeautifulSoup(getattr(entry, "summary", ""), "html.parser").get_text(" ", strip=True),
+                        published_at=parse_datetime(getattr(entry, "published_parsed", None) or getattr(entry, "published", None)),
+                        collected_at=collected_at,
+                        evidence_class="news_index",
+                        query="",
+                    )
+                )
+        except Exception as exc:
+            gaps.append(CoverageGap(source="google-news-top", url=feed_url, reason=str(exc), recovery="Retry later or use query-based sources, GDELT, or custom feeds."))
+    regions = ",".join(google_news_regions(args))
+    return out, SourceStatus(name="google-news-top", status="ok" if out else "partial", collected=len(out), message=f"{len(out)} candidates across {regions}"), gaps
+
+
 def collect_google_news(queries: list[str], args: argparse.Namespace, collected_at: str) -> tuple[list[Candidate], SourceStatus, list[CoverageGap]]:
     out: list[Candidate] = []
     gaps: list[CoverageGap] = []
     hl = args.language or "en-US"
     gl = args.region or "US"
-    ceid = f"{gl}:en"
+    ceid = f"{gl}:{google_news_language_code(hl)}"
     status = SourceStatus(name="google-news-rss", status="ok")
     for query in queries:
         encoded = quote_plus(f"{query} when:{max(1, int(args.lookback_hours // 24) or 1)}d")
@@ -511,6 +575,154 @@ def write_auth_session_guide(path: Path, urls: list[str], collected_at: str) -> 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_automation_guide(path: Path, collected_at: str) -> None:
+    lines = [
+        "# Automation Guide",
+        "",
+        f"- Generated at: `{collected_at}`",
+        "- Purpose: run Hot News Radar on a schedule and keep each run's report artifacts.",
+        "",
+        "## Standard Flow",
+        "",
+        "1. Define the recurring question: global hot news, topic scan, reputation scan, or custom feed scan.",
+        "2. Choose the schedule: hourly for fast-moving incidents, daily for general news, weekly for slower research topics.",
+        "3. Choose runtime: local Python, Docker, GitHub Actions, cron, systemd timer, Windows Task Scheduler, or the host agent's automation feature.",
+        "4. Run `python scripts/doctor.py --profile full --repair-plan` before enabling the schedule.",
+        "5. Use a stable output directory and keep artifacts by timestamp.",
+        "6. If Telegram delivery is needed, create a bot, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, run a dry run, then schedule the sender.",
+        "7. If login-gated sources are required, do not run them unattended unless the user has explicitly configured an authorized browser/session workflow.",
+        "8. Add Telegram delivery only after one successful manual radar run and one successful Telegram dry run.",
+        "9. Monitor source health and coverage gaps; failed lanes should be visible in the output, not hidden.",
+        "",
+        "## Default Global Hot News",
+        "",
+        "When no topic or region is provided, this uses blended public top-news regions plus broad news, technology, AI, science, market, and geopolitics queries.",
+        "",
+        "```bash",
+        "python scripts/hot_news_radar.py --out artifacts",
+        "```",
+        "",
+        "## Topic Scan",
+        "",
+        "```bash",
+        "python scripts/hot_news_radar.py --query \"AI agents\" --lookback-hours 24 --limit 30 --out artifacts",
+        "```",
+        "",
+        "## Docker",
+        "",
+        "```bash",
+        "docker run --rm \\",
+        "  -v \"$PWD/artifacts:/app/artifacts\" \\",
+        "  hot-news-radar:base \\",
+        "  --out artifacts",
+        "```",
+        "",
+        "## Cron Example",
+        "",
+        "```cron",
+        "0 * * * * cd /path/to/hot-news-radar && /usr/bin/python3 scripts/hot_news_radar.py --out artifacts >> logs/hot-news-radar.log 2>&1",
+        "```",
+        "",
+        "## Windows Task Scheduler Example",
+        "",
+        "Program: `python`",
+        "",
+        "Arguments: `scripts/hot_news_radar.py --out artifacts`",
+        "",
+        "Start in: the repository root.",
+        "",
+        "## GitHub Actions Example",
+        "",
+        "```yaml",
+        "on:",
+        "  schedule:",
+        "    - cron: \"0 * * * *\"",
+        "  workflow_dispatch:",
+        "jobs:",
+        "  radar:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - uses: actions/checkout@v4",
+        "      - uses: actions/setup-python@v5",
+        "        with:",
+        "          python-version: \"3.12\"",
+        "      - run: python -m pip install -r requirements.txt",
+        "      - run: python scripts/hot_news_radar.py --out artifacts",
+        "      - uses: actions/upload-artifact@v4",
+        "        with:",
+        "          name: hot-news-radar",
+        "          path: artifacts",
+        "```",
+        "",
+        "## Telegram Delivery",
+        "",
+        "Use `telegram-delivery-guide.md` and `scripts/telegram_notify.py` after a manual run succeeds.",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_telegram_guide(path: Path, collected_at: str) -> None:
+    lines = [
+        "# Telegram Delivery Guide",
+        "",
+        f"- Generated at: `{collected_at}`",
+        "- Purpose: send Hot News Radar reports to a Telegram chat after manual or automated runs.",
+        "",
+        "## Setup",
+        "",
+        "1. In Telegram, open `@BotFather`.",
+        "2. Run `/newbot` and follow the prompts.",
+        "3. Copy the bot token. Treat it as a secret.",
+        "4. Open a chat with the bot and send a test message, or add the bot to a group/channel where it should post.",
+        "5. Get the chat ID using one of these methods:",
+        "   - Visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` after sending a message to the bot.",
+        "   - For a group/channel, add the bot and inspect `chat.id` from `getUpdates`.",
+        "   - Use a trusted chat-id helper only if you understand the privacy tradeoff.",
+        "6. Store credentials as environment variables. Do not hard-code them in scripts, repos, logs, or screenshots.",
+        "",
+        "## Environment Variables",
+        "",
+        "```bash",
+        "export TELEGRAM_BOT_TOKEN=\"...\"",
+        "export TELEGRAM_CHAT_ID=\"...\"",
+        "```",
+        "",
+        "PowerShell:",
+        "",
+        "```powershell",
+        "$env:TELEGRAM_BOT_TOKEN = \"...\"",
+        "$env:TELEGRAM_CHAT_ID = \"...\"",
+        "```",
+        "",
+        "## Dry Run",
+        "",
+        "```bash",
+        "python scripts/telegram_notify.py --file artifacts/<run>/radar-report.md --dry-run",
+        "```",
+        "",
+        "## Send A Report",
+        "",
+        "```bash",
+        "python scripts/telegram_notify.py --file artifacts/<run>/radar-report.md --title \"Hot News Radar\"",
+        "```",
+        "",
+        "## Run Radar Then Send Latest Report",
+        "",
+        "```bash",
+        "RUN_DIR=$(python scripts/hot_news_radar.py --out artifacts | tail -n 1)",
+        "python scripts/telegram_notify.py --file \"$RUN_DIR/radar-report.md\" --title \"Hot News Radar\"",
+        "```",
+        "",
+        "## Safety",
+        "",
+        "- Do not print bot tokens or chat IDs into shared logs.",
+        "- Do not send private account data, credentials, cookies, tokens, or unrelated personal information.",
+        "- For high-volume schedules, rate-limit messages and send summaries instead of every raw candidate.",
+        "- If delivery fails, keep the local artifact and report the failure visibly.",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def collect_playwright(urls: list[str], args: argparse.Namespace, collected_at: str) -> tuple[list[Candidate], SourceStatus, list[CoverageGap]]:
     out: list[Candidate] = []
     gaps: list[CoverageGap] = []
@@ -608,6 +820,7 @@ def relevance_points(candidate: Candidate, terms: list[str]) -> float:
 
 def authority_points(source_kind: str) -> float:
     table = {
+        "google-news-top": 13,
         "google-news": 12,
         "gdelt": 12,
         "rss": 12,
@@ -662,8 +875,8 @@ def dedupe_and_score(candidates: list[Candidate], queries: list[str], now: datet
             existing.published_at = candidate.published_at
         if len(candidate.summary) > len(existing.summary):
             existing.summary = candidate.summary
-    terms = query_terms(queries)
     for candidate in groups.values():
+        terms = query_terms([candidate.query]) if candidate.query else query_terms(queries)
         consensus = min(15.0, max(0, candidate.source_count - 1) * 5.0)
         score = (
             freshness_points(candidate.age_hours)
@@ -699,7 +912,7 @@ def write_csv(path: Path, candidates: list[Candidate]) -> None:
             writer.writerow({field: row.get(field) for field in fields})
 
 
-def write_report(path: Path, args: argparse.Namespace, candidates: list[Candidate], statuses: list[SourceStatus], gaps: list[CoverageGap], auth_guide: AuthGuide, collected_at: str) -> None:
+def write_report(path: Path, args: argparse.Namespace, candidates: list[Candidate], statuses: list[SourceStatus], gaps: list[CoverageGap], auth_guide: AuthGuide, run_guides: RunGuides, collected_at: str) -> None:
     lines: list[str] = []
     queries = ", ".join(args.query or [])
     lines.append("# Hot News Radar Report")
@@ -707,6 +920,8 @@ def write_report(path: Path, args: argparse.Namespace, candidates: list[Candidat
     lines.append(f"- Collected at: `{collected_at}`")
     lines.append(f"- Query: `{queries or 'URL/feed only'}`")
     lines.append(f"- Mode: `{args.mode}`")
+    if run_guides.default_profile:
+        lines.append(f"- Default profile: `{run_guides.default_profile}`")
     lines.append(f"- Lookback: `{args.lookback_hours} hours`")
     lines.append(f"- Candidate count: `{len(candidates)}`")
     lines.append("")
@@ -748,6 +963,15 @@ def write_report(path: Path, args: argparse.Namespace, candidates: list[Candidat
         lines.append("- Use this only for user-authorized pages. The user completes login, SSO, passkey, CAPTCHA, and MFA prompts directly.")
         lines.append("- Do not collect credentials, MFA codes, cookies, tokens, private messages, payment details, or unrelated account data.")
         lines.append("")
+    if run_guides.automation_guide_path or run_guides.telegram_guide_path:
+        lines.append("## Automation And Delivery")
+        lines.append("")
+        if run_guides.automation_guide_path:
+            lines.append(f"- Automation guide: `{run_guides.automation_guide_path}`")
+        if run_guides.telegram_guide_path:
+            lines.append(f"- Telegram guide: `{run_guides.telegram_guide_path}`")
+        lines.append("- Keep secrets in environment variables or the host secret store; do not commit bot tokens or chat IDs.")
+        lines.append("")
     lines.append("## Detailed Candidates")
     lines.append("")
     for index, item in enumerate(candidates[: args.limit], 1):
@@ -775,6 +999,8 @@ def write_report(path: Path, args: argparse.Namespace, candidates: list[Candidat
 def selected_sources(args: argparse.Namespace) -> list[str]:
     if args.source:
         return args.source
+    if args.mode == "global-hot":
+        return ["google-news-top", "google-news", "gdelt", "hacker-news"]
     if args.mode == "news":
         return ["google-news", "gdelt"]
     if args.mode == "social":
@@ -786,21 +1012,32 @@ def selected_sources(args: argparse.Namespace) -> list[str]:
     return ["google-news", "gdelt", "hacker-news", "reddit"]
 
 
+def apply_default_profile(args: argparse.Namespace) -> RunGuides:
+    guides = RunGuides()
+    if not args.query and not args.feed and not args.url:
+        args.mode = "global-hot"
+        args.query = list(DEFAULT_GLOBAL_HOT_QUERIES)
+        guides.default_profile = "global-hot"
+    return guides
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Find, rank, and summarize fresh public signals.")
     parser.add_argument("--query", action="append", default=[], help="Topic or search query. Repeatable.")
-    parser.add_argument("--mode", choices=["general", "news", "social", "research", "reputation"], default="general")
+    parser.add_argument("--mode", choices=["general", "global-hot", "news", "social", "research", "reputation"], default="general")
     parser.add_argument("--lookback-hours", type=int, default=24)
     parser.add_argument("--freshness-hours", type=int, default=None, help="Alias for lookback-hours when callers prefer freshness wording.")
     parser.add_argument("--limit", type=int, default=30)
-    parser.add_argument("--source", action="append", choices=["google-news", "gdelt", "hacker-news", "reddit", "rss", "url", "firecrawl"], help="Source lane. Repeatable. Defaults by mode.")
+    parser.add_argument("--source", action="append", choices=["google-news-top", "google-news", "gdelt", "hacker-news", "reddit", "rss", "url", "firecrawl"], help="Source lane. Repeatable. Defaults by mode.")
     parser.add_argument("--feed", action="append", default=[], help="RSS or Atom feed URL. Repeatable.")
     parser.add_argument("--url", action="append", default=[], help="Direct page URL. Repeatable.")
     parser.add_argument("--subreddit", action="append", default=[], help="Restrict Reddit search to subreddit. Repeatable.")
     parser.add_argument("--language", default="en-US", help="Google News language, for example en-US.")
-    parser.add_argument("--region", default="US", help="Google News region, for example US.")
+    parser.add_argument("--region", default="", help="Google News region, for example US. Default: blended global regions for global-hot, US otherwise.")
     parser.add_argument("--browser-fallback", choices=["off", "plan", "playwright"], default="plan")
     parser.add_argument("--auth-session-guide", action="store_true", help="Write a step-by-step guide for user-controlled login-gated source review.")
+    parser.add_argument("--automation-guide", action="store_true", help="Write a scheduling guide for recurring radar runs.")
+    parser.add_argument("--telegram-guide", action="store_true", help="Write a Telegram delivery setup guide for recurring reports.")
     parser.add_argument("--firecrawl-key-env", default="FIRECRAWL_API_KEY")
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--out", default="artifacts")
@@ -812,9 +1049,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.freshness_hours is not None:
         args.lookback_hours = args.freshness_hours
-    if not args.query and not args.feed and not args.url:
-        print("Provide at least one --query, --feed, or --url.", file=sys.stderr)
-        return 2
+    run_guides = apply_default_profile(args)
     collected_at = iso_now()
     now = utc_now()
     sources = selected_sources(args)
@@ -822,6 +1057,11 @@ def main(argv: list[str] | None = None) -> int:
     statuses: list[SourceStatus] = []
     gaps: list[CoverageGap] = []
 
+    if "google-news-top" in sources:
+        candidates, status, source_gaps = collect_google_news_top(args, collected_at)
+        all_candidates.extend(candidates)
+        statuses.append(status)
+        gaps.extend(source_gaps)
     if "google-news" in sources and args.query:
         candidates, status, source_gaps = collect_google_news(args.query, args, collected_at)
         all_candidates.extend(candidates)
@@ -888,6 +1128,14 @@ def main(argv: list[str] | None = None) -> int:
         guide_path = run_dir / "authenticated-session-guide.md"
         write_auth_session_guide(guide_path, auth_guide.urls, collected_at)
         auth_guide.path = guide_path.as_posix()
+    if args.automation_guide:
+        guide_path = run_dir / "automation-guide.md"
+        write_automation_guide(guide_path, collected_at)
+        run_guides.automation_guide_path = guide_path.as_posix()
+    if args.telegram_guide:
+        guide_path = run_dir / "telegram-delivery-guide.md"
+        write_telegram_guide(guide_path, collected_at)
+        run_guides.telegram_guide_path = guide_path.as_posix()
     write_json(run_dir / "candidates.json", [asdict(candidate) for candidate in ranked])
     write_json(run_dir / "sources.json", [asdict(status) for status in statuses])
     write_json(run_dir / "coverage-gaps.json", [asdict(gap) for gap in gaps])
@@ -898,14 +1146,17 @@ def main(argv: list[str] | None = None) -> int:
             "query": args.query,
             "mode": args.mode,
             "lookback_hours": args.lookback_hours,
+            "default_profile": run_guides.default_profile,
             "candidate_count": len(ranked),
             "top": [asdict(candidate) for candidate in ranked[:5]],
             "coverage_gap_count": len(gaps),
             "authenticated_session_guide": asdict(auth_guide),
+            "automation_guide": run_guides.automation_guide_path,
+            "telegram_guide": run_guides.telegram_guide_path,
         },
     )
     write_csv(run_dir / "candidates.csv", ranked)
-    write_report(run_dir / "radar-report.md", args, ranked, statuses, gaps, auth_guide, collected_at)
+    write_report(run_dir / "radar-report.md", args, ranked, statuses, gaps, auth_guide, run_guides, collected_at)
     print(str(run_dir))
     return 0
 

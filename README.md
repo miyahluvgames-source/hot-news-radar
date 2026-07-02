@@ -17,6 +17,8 @@ The core rule:
 | Optional providers | Firecrawl-compatible search when an API key is available |
 | Fallback strategy | Browser-render plan or optional Playwright rendering for dynamic pages |
 | Authenticated review | Step-by-step user-controlled login guide for authorized pages |
+| Automation | Scheduling guide for cron, Task Scheduler, GitHub Actions, Docker, and host agents |
+| Telegram delivery | BotFather setup guide plus `telegram_notify.py` sender |
 | Evidence ledger | Normalized candidates, source status, coverage gaps, warnings |
 | Ranking | Heat score from freshness, relevance, source quality, cross-source consensus, and engagement |
 | Report | `radar-report.md`, `candidates.json`, `coverage-gaps.json`, `sources.json`, `brief.json`, `candidates.csv` |
@@ -77,6 +79,12 @@ Check the environment:
 
 ```bash
 python scripts/doctor.py --profile base --repair-plan
+```
+
+Run the default global hot news radar. This is the default when no topic, URL, feed, region, or source is specified. It blends multiple public top-news regions, broad world-news queries, technology, AI, science, markets, and geopolitics:
+
+```bash
+python scripts/hot_news_radar.py --out artifacts
 ```
 
 Run a general hot-topic radar:
@@ -141,6 +149,25 @@ export FIRECRAWL_API_KEY="..."
 python scripts/hot_news_radar.py --query "open source AI browser automation" --source firecrawl
 ```
 
+Generate automation and Telegram setup guides:
+
+```bash
+python scripts/hot_news_radar.py --automation-guide --telegram-guide --out artifacts
+```
+
+Narrow the default briefing when needed:
+
+```bash
+python scripts/hot_news_radar.py --region GB --language en-GB --out artifacts
+python scripts/hot_news_radar.py --query "AI policy" --mode news --out artifacts
+```
+
+Send a report to Telegram after setting `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`:
+
+```bash
+python scripts/telegram_notify.py --file artifacts/<run>/radar-report.md --title "Hot News Radar"
+```
+
 ## Docker
 
 Docker provides a reproducible runtime for users who do not want to manage local Python dependencies manually.
@@ -157,8 +184,6 @@ Run a scan:
 docker run --rm \
   -v "$PWD/artifacts:/app/artifacts" \
   hot-news-radar:base \
-  --query "AI agents" \
-  --lookback-hours 24 \
   --out artifacts
 ```
 
@@ -167,6 +192,8 @@ Build the optional browser image:
 ```bash
 docker build --target browser -t hot-news-radar:browser .
 ```
+
+The browser image uses the official Playwright Python base image so Chromium and system libraries are reproducible.
 
 Run browser rendering inside Docker:
 
@@ -232,6 +259,8 @@ artifacts/hot-news-radar-<timestamp>/
 ├── sources.json
 ├── coverage-gaps.json
 ├── authenticated-session-guide.md   # when requested or needed
+├── automation-guide.md               # when requested
+├── telegram-delivery-guide.md        # when requested
 └── brief.json
 ```
 
@@ -244,10 +273,14 @@ artifacts/hot-news-radar-<timestamp>/
 ├── agents/openai.yaml
 ├── scripts/
 │   ├── hot_news_radar.py
-│   └── doctor.py
+│   ├── doctor.py
+│   └── telegram_notify.py
 ├── references/
 │   ├── browser-fallbacks.md
 │   ├── authenticated-sources.md
+│   ├── modes.md
+│   ├── automation.md
+│   ├── telegram-delivery.md
 │   ├── github-research-notes.md
 │   ├── prompt-pack.md
 │   ├── scoring.md

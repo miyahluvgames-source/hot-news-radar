@@ -5,7 +5,9 @@ from pathlib import Path
 
 from scripts.hot_news_radar import Candidate, CoverageGap, dedupe_and_score, parse_html_candidate
 from scripts.hot_news_radar import parse_datetime
-from scripts.hot_news_radar import main, needs_auth_guide, write_auth_session_guide
+from scripts.hot_news_radar import DEFAULT_GLOBAL_HOT_QUERIES, apply_default_profile, build_parser, google_news_regions
+from scripts.hot_news_radar import main, needs_auth_guide, selected_sources, write_auth_session_guide
+from scripts.telegram_notify import chunks, load_message
 
 
 def test_dedupe_and_score_merges_sources() -> None:
@@ -89,3 +91,54 @@ def test_cli_writes_auth_session_guide(tmp_path) -> None:
 def test_auth_gap_detection_catches_login_or_permission() -> None:
     assert needs_auth_guide(CoverageGap(source="url", url="https://example.com", reason="HTTP 403"))
     assert needs_auth_guide(CoverageGap(source="url", url="https://example.com", reason="sign in to continue"))
+
+
+def test_empty_input_uses_default_global_hot_profile() -> None:
+    args = build_parser().parse_args([])
+    guides = apply_default_profile(args)
+    assert args.mode == "global-hot"
+    assert args.query == DEFAULT_GLOBAL_HOT_QUERIES
+    assert guides.default_profile == "global-hot"
+    assert "google-news-top" in selected_sources(args)
+    assert len(google_news_regions(args)) > 1
+
+
+def test_region_keeps_global_hot_profile_narrowed_to_user_region() -> None:
+    args = build_parser().parse_args(["--region", "GB"])
+    guides = apply_default_profile(args)
+    assert args.mode == "global-hot"
+    assert guides.default_profile == "global-hot"
+    assert google_news_regions(args) == ["GB"]
+
+
+def test_cli_writes_automation_and_telegram_guides(tmp_path) -> None:
+    exit_code = main(
+        [
+            "--query",
+            "AI agents",
+            "--source",
+            "rss",
+            "--feed",
+            "tests/fixtures/sample_feed.xml",
+            "--automation-guide",
+            "--telegram-guide",
+            "--out",
+            str(tmp_path),
+        ]
+    )
+    assert exit_code == 0
+    assert len(list(tmp_path.glob("*/automation-guide.md"))) == 1
+    assert len(list(tmp_path.glob("*/telegram-delivery-guide.md"))) == 1
+    brief = list(tmp_path.glob("*/brief.json"))[0].read_text(encoding="utf-8")
+    assert "automation_guide" in brief
+    assert "telegram_guide" in brief
+
+
+def test_telegram_message_chunks_and_title(tmp_path) -> None:
+    report = tmp_path / "radar-report.md"
+    report.write_text("a" * 8000, encoding="utf-8")
+    message = load_message(report, "Hot News Radar")
+    parts = list(chunks(message, max_chars=3900))
+    assert message.startswith("Hot News Radar")
+    assert len(parts) == 3
+    assert all(len(part) <= 3900 for part in parts)

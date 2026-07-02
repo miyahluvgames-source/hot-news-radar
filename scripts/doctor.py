@@ -73,6 +73,15 @@ def provider_checks() -> list[Check]:
     ]
 
 
+def telegram_checks() -> list[Check]:
+    checks = [
+        Check("python-module:requests", has_module("requests"), "installed" if has_module("requests") else "missing", "python -m pip install -r requirements.txt"),
+        Check("env:TELEGRAM_BOT_TOKEN", bool(os.getenv("TELEGRAM_BOT_TOKEN")), "set" if os.getenv("TELEGRAM_BOT_TOKEN") else "not set", "Create a bot with @BotFather and set TELEGRAM_BOT_TOKEN."),
+        Check("env:TELEGRAM_CHAT_ID", bool(os.getenv("TELEGRAM_CHAT_ID")), "set" if os.getenv("TELEGRAM_CHAT_ID") else "not set", "Send a message to the bot, inspect getUpdates, and set TELEGRAM_CHAT_ID."),
+    ]
+    return checks
+
+
 def docker_checks() -> list[Check]:
     docker = shutil.which("docker")
     if not docker:
@@ -87,6 +96,8 @@ def collect(profile: str) -> list[Check]:
         checks.extend(browser_checks())
     if profile in ("providers", "full"):
         checks.extend(provider_checks())
+    if profile in ("telegram", "full"):
+        checks.extend(telegram_checks())
     if profile == "full":
         checks.extend(docker_checks())
     return checks
@@ -109,14 +120,15 @@ def markdown(checks: list[Check], repair_plan: bool) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check Hot News Radar dependencies.")
-    parser.add_argument("--profile", choices=["base", "browser", "providers", "full"], default="base")
+    parser.add_argument("--profile", choices=["base", "browser", "providers", "telegram", "full"], default="base")
     parser.add_argument("--repair-plan", action="store_true")
     parser.add_argument("--format", choices=["json", "markdown"], default="json")
     args = parser.parse_args(argv)
     checks = collect(args.profile)
+    optional_prefixes = ("provider-env:", "env:TELEGRAM_")
     payload: dict[str, Any] = {
         "profile": args.profile,
-        "ok": all(check.ok for check in checks if not check.name.startswith("provider-env:")),
+        "ok": all(check.ok for check in checks if not check.name.startswith(optional_prefixes)),
         "checks": [asdict(check) for check in checks],
         "repair_plan": list(dict.fromkeys(check.repair for check in checks if not check.ok and check.repair)) if args.repair_plan else [],
     }
@@ -129,4 +141,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
