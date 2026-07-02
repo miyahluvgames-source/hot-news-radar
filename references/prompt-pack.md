@@ -40,3 +40,15 @@ Use Hot News Radar with these feeds:
 Summarize what is new, deduplicate repeated items, and flag stale or missing publication times.
 ```
 
+## Authenticated Page Review
+
+```text
+Use Hot News Radar for this login-gated page:
+<URL>
+
+Generate an authenticated session guide first.
+Walk me through the process step by step.
+I will complete login, SSO, CAPTCHA, and MFA directly in the visible browser.
+Do not ask me to reveal passwords, MFA codes, cookies, tokens, or private account data.
+Capture only task-relevant evidence and report any coverage gaps.
+```

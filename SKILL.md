@@ -16,7 +16,8 @@ Use this skill when a user wants current or recent public signals: breaking news
 3. Record coverage gaps. A failed source, blocked page, login gate, CAPTCHA, JS-only page, or error page is not evidence of absence.
 4. Do not bypass access controls, paywalls, CAPTCHAs, robots rules, or terms of service.
 5. Prefer primary or authoritative sources for high-stakes claims.
-6. If the user asks for "latest", run live collection or state that the answer is not live-verified.
+6. For authorized login-gated pages, guide the user through a visible session; the user handles credentials and MFA directly.
+7. If the user asks for "latest", run live collection or state that the answer is not live-verified.
 
 ## Quick Workflow
 
@@ -34,13 +35,15 @@ Use this skill when a user wants current or recent public signals: breaking news
    ```
 
 4. If a page is blocked, dynamic, or login-gated, use `--browser-fallback plan` first. Use `--browser-fallback playwright` only for pages that can be safely rendered without bypassing access controls.
-5. Read `radar-report.md`, `coverage-gaps.json`, and `candidates.json` before summarizing.
-6. Report top findings with source links, heat score, evidence class, and remaining gaps.
+5. If the user is authorized to access a login-gated page, add `--auth-session-guide` and follow `authenticated-session-guide.md` step by step.
+6. Read `radar-report.md`, `coverage-gaps.json`, and `candidates.json` before summarizing.
+7. Report top findings with source links, heat score, evidence class, and remaining gaps.
 
 ## When To Read References
 
 - Read `references/source-strategy.md` when choosing source lanes for a new domain.
 - Read `references/browser-fallbacks.md` when pages are blocked, dynamic, logged-in, or inconsistent.
+- Read `references/authenticated-sources.md` before guiding a user through a logged-in account or workspace.
 - Read `references/scoring.md` when adjusting ranking or explaining heat scores.
 - Read `references/prompt-pack.md` for user-facing prompt templates.
 - Read `references/github-research-notes.md` when explaining the public open-source design influences.
@@ -73,4 +76,4 @@ When answering the user, include:
 - strongest findings,
 - evidence links,
 - what failed or still needs visible/manual review.
-
+- whether an authenticated session was used, without exposing account secrets or unrelated private data.

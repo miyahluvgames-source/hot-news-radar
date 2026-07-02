@@ -79,6 +79,13 @@ class CoverageGap:
     severity: str = "medium"
 
 
+@dataclass
+class AuthGuide:
+    path: str = ""
+    urls: list[str] = field(default_factory=list)
+    required: bool = False
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -410,10 +417,98 @@ def collect_urls(urls: list[str], args: argparse.Namespace, collected_at: str) -
 
 def browser_recovery(url: str) -> str:
     return (
-        "Use a user-controlled visible browser session when allowed, confirm the page title and visible text, "
-        "capture a screenshot or DOM text, and record whether login, permission, CAPTCHA, or paywall prevents access. "
-        f"Target URL: {url}"
+        "Use the authenticated session guide. Open a user-controlled visible browser session when allowed, "
+        "ask the user to complete login/MFA directly, confirm page title, URL, visible account context, and visible text, "
+        "capture only non-sensitive screenshot/DOM/text evidence, and record whether login, permission, CAPTCHA, "
+        f"paywall, or region access prevents collection. Target URL: {url}"
     )
+
+
+def needs_auth_guide(gap: CoverageGap) -> bool:
+    reason = f"{gap.reason} {gap.recovery}".lower()
+    return any(
+        marker in reason
+        for marker in (
+            "401",
+            "403",
+            "login",
+            "sign in",
+            "permission",
+            "captcha",
+            "paywall",
+            "access denied",
+            "verify you are human",
+            "user-controlled visible browser",
+            "authenticated session guide",
+        )
+    )
+
+
+def write_auth_session_guide(path: Path, urls: list[str], collected_at: str) -> None:
+    unique_urls = list(dict.fromkeys(urls))
+    lines: list[str] = [
+        "# Authenticated Source Session Guide",
+        "",
+        f"- Generated at: `{collected_at}`",
+        "- Purpose: help an AI agent collect user-authorized evidence from login-gated or permission-gated pages without handling private credentials.",
+        "",
+        "## Hard Boundaries",
+        "",
+        "- The user enters passwords, passkeys, SSO prompts, and MFA codes directly.",
+        "- The agent must not ask the user to reveal passwords, MFA codes, recovery codes, session cookies, API tokens, or private messages.",
+        "- The agent must not bypass paywalls, CAPTCHAs, account permissions, rate limits, robots rules, or terms of service.",
+        "- The agent captures only the minimum evidence needed for the task and redacts private account details when possible.",
+        "- If access is denied after user login, record a coverage gap instead of forcing access.",
+        "",
+        "## Target URLs",
+        "",
+    ]
+    if unique_urls:
+        for url in unique_urls:
+            lines.append(f"- {url}")
+    else:
+        lines.append("- No URL was supplied. Ask the user for the exact page URL before starting.")
+    lines.extend(
+        [
+            "",
+            "## Step-by-Step Flow",
+            "",
+            "1. Restate the task boundary: what page or topic will be inspected, what evidence is needed, and what must not be collected.",
+            "2. Confirm authorization: ask the user to confirm they own or are allowed to access the account/page.",
+            "3. Open a controlled visible browser session on the exact target domain. Show the user the domain before login.",
+            "4. Pause and let the user complete login directly in the browser. The user handles password, SSO, passkey, CAPTCHA, and MFA prompts.",
+            "5. Do not read, record, summarize, or screenshot credentials, MFA codes, recovery codes, account settings, private messages, or payment information.",
+            "6. After login, ask the user to navigate to the exact page or confirm that the current page is ready for inspection.",
+            "7. Confirm visible state: final URL, page title, account/workspace indicator if relevant, visible timestamp, and whether the page looks fully loaded.",
+            "8. If the page shows an error, empty state, rate limit, permission warning, challenge, or paywall, retry once only when the user approves, then record a coverage gap.",
+            "9. Capture evidence using the least invasive method: visible text, selected links, timestamps, counters, public post IDs, or a redacted screenshot.",
+            "10. Redact or avoid private fields: email addresses, usernames not relevant to the task, balances, account IDs, customer data, private comments, and notification contents.",
+            "11. Compare visible evidence against the task. Do not infer unseen data from a personalized feed or partial page.",
+            "12. Write the result with source URL, collection time, evidence class `authenticated_visible_review`, and any remaining coverage gaps.",
+            "13. Ask the user whether to keep the browser session open, log out, or close the window. Do not persist session state unless the user explicitly wants that environment to keep it.",
+            "",
+            "## Evidence Checklist",
+            "",
+            "- Final URL",
+            "- Page title",
+            "- Visible timestamp or publication time",
+            "- Visible source/account/page identity",
+            "- Relevant text or counters",
+            "- Screenshot path only if a screenshot was necessary and safe",
+            "- Collection time",
+            "- Redactions performed",
+            "- Coverage gaps or access limits",
+            "",
+            "## Stop Conditions",
+            "",
+            "- The user does not confirm authorization.",
+            "- The page asks the agent to handle credentials or MFA directly.",
+            "- The content is private and not necessary for the task.",
+            "- The page blocks access with CAPTCHA, paywall, permission, or rate-limit controls that the user cannot or does not want to resolve.",
+            "- The required evidence cannot be collected without exceeding the task boundary.",
+        ]
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def collect_playwright(urls: list[str], args: argparse.Namespace, collected_at: str) -> tuple[list[Candidate], SourceStatus, list[CoverageGap]]:
@@ -604,7 +699,7 @@ def write_csv(path: Path, candidates: list[Candidate]) -> None:
             writer.writerow({field: row.get(field) for field in fields})
 
 
-def write_report(path: Path, args: argparse.Namespace, candidates: list[Candidate], statuses: list[SourceStatus], gaps: list[CoverageGap], collected_at: str) -> None:
+def write_report(path: Path, args: argparse.Namespace, candidates: list[Candidate], statuses: list[SourceStatus], gaps: list[CoverageGap], auth_guide: AuthGuide, collected_at: str) -> None:
     lines: list[str] = []
     queries = ", ".join(args.query or [])
     lines.append("# Hot News Radar Report")
@@ -646,6 +741,13 @@ def write_report(path: Path, args: argparse.Namespace, candidates: list[Candidat
             url = f"[link]({gap.url})" if gap.url else ""
             lines.append(f"| {gap.severity} | {gap.source} | {url} | {gap.reason.replace('|', '/')} | {gap.recovery.replace('|', '/')} |")
     lines.append("")
+    if auth_guide.required:
+        lines.append("## Authenticated Review")
+        lines.append("")
+        lines.append(f"- Guide: `{auth_guide.path or 'authenticated-session-guide.md'}`")
+        lines.append("- Use this only for user-authorized pages. The user completes login, SSO, passkey, CAPTCHA, and MFA prompts directly.")
+        lines.append("- Do not collect credentials, MFA codes, cookies, tokens, private messages, payment details, or unrelated account data.")
+        lines.append("")
     lines.append("## Detailed Candidates")
     lines.append("")
     for index, item in enumerate(candidates[: args.limit], 1):
@@ -698,6 +800,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--language", default="en-US", help="Google News language, for example en-US.")
     parser.add_argument("--region", default="US", help="Google News region, for example US.")
     parser.add_argument("--browser-fallback", choices=["off", "plan", "playwright"], default="plan")
+    parser.add_argument("--auth-session-guide", action="store_true", help="Write a step-by-step guide for user-controlled login-gated source review.")
     parser.add_argument("--firecrawl-key-env", default="FIRECRAWL_API_KEY")
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--out", default="artifacts")
@@ -777,6 +880,14 @@ def main(argv: list[str] | None = None) -> int:
 
     run_dir = Path(args.out) / f"hot-news-radar-{safe_filename(collected_at)}"
     run_dir.mkdir(parents=True, exist_ok=True)
+    auth_urls = [gap.url for gap in gaps if gap.url and needs_auth_guide(gap)]
+    if args.auth_session_guide and args.url:
+        auth_urls.extend(args.url)
+    auth_guide = AuthGuide(required=bool(auth_urls or args.auth_session_guide), urls=list(dict.fromkeys(auth_urls)))
+    if auth_guide.required:
+        guide_path = run_dir / "authenticated-session-guide.md"
+        write_auth_session_guide(guide_path, auth_guide.urls, collected_at)
+        auth_guide.path = guide_path.as_posix()
     write_json(run_dir / "candidates.json", [asdict(candidate) for candidate in ranked])
     write_json(run_dir / "sources.json", [asdict(status) for status in statuses])
     write_json(run_dir / "coverage-gaps.json", [asdict(gap) for gap in gaps])
@@ -790,10 +901,11 @@ def main(argv: list[str] | None = None) -> int:
             "candidate_count": len(ranked),
             "top": [asdict(candidate) for candidate in ranked[:5]],
             "coverage_gap_count": len(gaps),
+            "authenticated_session_guide": asdict(auth_guide),
         },
     )
     write_csv(run_dir / "candidates.csv", ranked)
-    write_report(run_dir / "radar-report.md", args, ranked, statuses, gaps, collected_at)
+    write_report(run_dir / "radar-report.md", args, ranked, statuses, gaps, auth_guide, collected_at)
     print(str(run_dir))
     return 0
 

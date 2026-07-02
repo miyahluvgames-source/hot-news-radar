@@ -18,6 +18,8 @@ Browser fallback is a recovery path, not a bypass mechanism.
 4. Record whether the page requires login, payment, CAPTCHA, permission, or region access.
 5. If the page remains blocked, report a coverage gap and use alternate public sources.
 
+For login-gated pages, use `--auth-session-guide` and follow `references/authenticated-sources.md`.
+
 ## Do Not
 
 - Do not bypass login, paywalls, CAPTCHAs, permission gates, robots rules, or anti-abuse controls.
@@ -28,4 +30,6 @@ Browser fallback is a recovery path, not a bypass mechanism.
 ## Optional Playwright Mode
 
 `--browser-fallback playwright` renders user-provided URLs with headless Chromium. It is useful for JavaScript pages that are publicly accessible. It is not a replacement for authenticated visible review.
+
+Do not use headless browser mode for credentials, MFA, SSO, or account-sensitive pages unless the user explicitly controls that environment and accepts the privacy implications. The safer default is a visible browser where the user performs login directly.
 

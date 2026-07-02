@@ -16,6 +16,7 @@ The core rule:
 | Fast discovery | Google News RSS, GDELT, RSS/Atom feeds, Hacker News, Reddit public search, direct URLs |
 | Optional providers | Firecrawl-compatible search when an API key is available |
 | Fallback strategy | Browser-render plan or optional Playwright rendering for dynamic pages |
+| Authenticated review | Step-by-step user-controlled login guide for authorized pages |
 | Evidence ledger | Normalized candidates, source status, coverage gaps, warnings |
 | Ranking | Heat score from freshness, relevance, source quality, cross-source consensus, and engagement |
 | Report | `radar-report.md`, `candidates.json`, `coverage-gaps.json`, `sources.json`, `brief.json`, `candidates.csv` |
@@ -113,6 +114,16 @@ python scripts/hot_news_radar.py \
   --browser-fallback plan
 ```
 
+Generate a full user-controlled login review guide for authorized pages:
+
+```bash
+python scripts/hot_news_radar.py \
+  --url "https://example.com/account/news" \
+  --source url \
+  --browser-fallback plan \
+  --auth-session-guide
+```
+
 Use optional Playwright rendering for pages that require JavaScript but do not require bypassing access controls:
 
 ```bash
@@ -181,6 +192,20 @@ Hot News Radar uses a source ladder instead of relying on one scraper:
 
 The skill does not bypass access controls, paywalls, CAPTCHAs, robots rules, or terms of service. When a page requires authentication or visible review, the report records a coverage gap and gives a safe recovery plan.
 
+## User-Controlled Login Flow
+
+For pages that need a logged-in session, Hot News Radar creates `authenticated-session-guide.md`. This guide is meant to be followed by an AI agent and the user together:
+
+1. The agent restates the exact page, topic, and evidence needed.
+2. The user confirms they are authorized to access the account or workspace.
+3. The agent opens the exact domain in a visible controlled browser.
+4. The user completes password, SSO, passkey, CAPTCHA, and MFA steps directly.
+5. The agent does not ask for or record credentials, MFA codes, cookies, tokens, or private account data.
+6. After login, the user navigates to or confirms the exact page.
+7. The agent captures only task-relevant visible evidence: URL, page title, timestamps, relevant text, counts, links, and safe screenshots when needed.
+8. The report labels this as `authenticated_visible_review` or records a coverage gap if access still fails.
+9. The user decides whether to keep the browser session open, log out, or close the window.
+
 ## Scoring
 
 Each candidate receives a 0-100 heat score:
@@ -206,6 +231,7 @@ artifacts/hot-news-radar-<timestamp>/
 ├── candidates.csv
 ├── sources.json
 ├── coverage-gaps.json
+├── authenticated-session-guide.md   # when requested or needed
 └── brief.json
 ```
 
@@ -221,6 +247,7 @@ artifacts/hot-news-radar-<timestamp>/
 │   └── doctor.py
 ├── references/
 │   ├── browser-fallbacks.md
+│   ├── authenticated-sources.md
 │   ├── github-research-notes.md
 │   ├── prompt-pack.md
 │   ├── scoring.md
@@ -250,4 +277,3 @@ The design borrows public, generalizable ideas from these open-source projects:
 - Do not publish claims from a single weak source without labeling uncertainty.
 - Record collection time separately from event time and source publication time.
 - Prefer official or primary sources for high-stakes claims.
-

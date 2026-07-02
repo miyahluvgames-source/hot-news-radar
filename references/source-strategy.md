@@ -14,6 +14,7 @@ Hot News Radar uses a source ladder so one blocked or noisy lane does not contro
 | Direct URL | User-provided source evidence | HTTP fetch may miss JavaScript or authenticated content |
 | Firecrawl-compatible provider | Search/extract fallback when key is available | External provider dependency, quota, and changing API formats |
 | Browser rendering | Dynamic page recovery and visible-state review | Must respect access controls and user authorization |
+| Authenticated visible review | User-authorized login-gated pages | User completes login directly; capture only task-relevant evidence |
 
 ## Currentness Rules
 
@@ -35,4 +36,3 @@ Use multiple query shapes for broad topics:
 - relevant community terms.
 
 Keep the first run narrow enough to inspect. Expand only after seeing source health and duplicates.
-
